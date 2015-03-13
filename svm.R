@@ -1,33 +1,72 @@
 library(e1071)
-dataset <- read.csv("UCIData.csv")
+library(RCurl)
+train.data.url <- getURL("https://raw.githubusercontent.com/dakshasrani/Horcruxes/master/data/train.csv")
+train.raw <- read.csv(text = train.data.url)
 
-nbrow <- nrow(dataset)
-nb <-ncol(dataset)
-class <- as.character(dataset[,nb])
+soils <- paste("Soil_Type", sep = "", collapse = NULL, 1:40)
+areas <- paste("Wilderness_Area", sep = "", collapse = NULL, 1:4)
 
-attribs <- dataset[,-nb]
+df = data.frame(train.raw[soils])
+df$soil = 0
+for(colname in soils)({
+  coldata=df[,colname]
+  df$soil[which(coldata==1)]=colname
+})
+df$soil=gsub("Soil_Type","",df$soil,fixed=T)
+soil <- as.numeric(df$soil)
 
-train <- attribs[1:15120,]
-test <- attribs[15121:nbrow,]
-classtrain <- class[1:15120]
-classtest <- class[15121:nbrow]
+df = data.frame(train.raw[areas])
+df$area = 0
+for(colname in areas)({
+  coldata=df[,colname]
+  df$area[which(coldata==1)]=colname
+})
+df$area=gsub("Wilderness_Area","",df$area,fixed=T)
+area <- as.numeric(df$area)
+
+# create the train data with one soil and one cover
+cover <- train.raw$Cover_Type
+
+remove.attributes <- c('Id',soils, areas, 'Cover_Type')
+# train.data <- subset(train.raw, select = -remove.attributes)
+train.data <- train.raw[, !(names(train.raw) %in% remove.attributes)]
+train.data$Soil_Type <- soil
+train.data$Wilderness_Area <- area
+classtrain <- as.factor(cover)
 
 # learn the model, type="C-classification" is set so that 
-model <- svm(train, classtrain,type="C-classification")
-prediction <- predict(model,test)
+model <- svm(train.data, classtrain,type="C-classification")
 
-train1 <- dataset[1:15120,]
-train1$Cover_Type <- as.factor(train1$Cover_Type)
+test.data.url <- getURL("https://raw.githubusercontent.com/dakshasrani/Horcruxes/master/data/test.csv")
+test <- read.csv(text = test.data.url)
 
-svm.model <- svm(Cover_Type ~ Elevation + Aspect + Slope + Horizontal_Distance_To_Hydrology + Vertical_Distance_To_Hydrology + Horizontal_Distance_To_Roadways + Hillshade_9am + Hillshade_Noon + Hillshade_3pm + Horizontal_Distance_To_Fire_Points + Soil_Type + Wilderness_Area, data = train1, type="C-classification")
+df = data.frame(test[soils])
+df$soil = 0
+for(colname in soils)({
+  coldata=df[,colname]
+  df$soil[which(coldata==1)]=colname
+})
+df$soil=gsub("Soil_Type","",df$soil,fixed=T)
+soil <- as.numeric(df$soil)
 
-svm.pred <- predict(svm.model, test)
+df = data.frame(test[areas])
+df$area = 0
+for(colname in areas)({
+  coldata=df[,colname]
+  df$area[which(coldata==1)]=colname
+})
+df$area=gsub("Wilderness_Area","",df$area,fixed=T)
+area <- as.numeric(df$area)
 
-# confusion matrix
-tab <- table(pred = prediction, true = classtest)
+remove.attributes <- c('Id',soils, areas)
 
-error1 <- mean(classtest != prediction) # 36.37
+test1 <- test[, !(names(test) %in% remove.attributes)]
+test1$Soil_Type <- soil
+test1$Wilderness_Area <- area
 
-error2 <- mean(classtest != svm.pred)
+prediction <- predict(model,test1)
 
-# obj <- tune.svm(train, as.factor(classtrain), type="C-classification", gamma = seq(.5, 1, by = .1), cost = seq(100,1000, by = 100))
+results <- data.frame(Id=test$Id,Cover_Type=prediction)
+
+write.csv(results, "svm.csv", row.names=FALSE)
+

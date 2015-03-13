@@ -1,21 +1,39 @@
 library(caret)
 library(gbm)
+library(RCurl)
+train.data.url <- getURL("https://raw.githubusercontent.com/dakshasrani/Horcruxes/master/data/train.csv")
+train.raw <- read.csv(text = train.data.url)
 
-dataset <- read.csv("UCIData.csv")
+soils <- paste("Soil_Type", sep = "", collapse = NULL, 1:40)
+areas <- paste("Wilderness_Area", sep = "", collapse = NULL, 1:4)
 
-nbrow <- nrow(dataset)
-nb <-ncol(dataset)
-class <- paste("S",as.character(dataset[,nb]),sep="",collapse=NULL)
+df = data.frame(train.raw[soils])
+df$soil = 0
+for(colname in soils)({
+  coldata=df[,colname]
+  df$soil[which(coldata==1)]=colname
+})
+df$soil=gsub("Soil_Type","",df$soil,fixed=T)
+soil <- as.numeric(df$soil)
 
-attribs <- dataset[,-nb]
+df = data.frame(train.raw[areas])
+df$area = 0
+for(colname in areas)({
+  coldata=df[,colname]
+  df$area[which(coldata==1)]=colname
+})
+df$area=gsub("Wilderness_Area","",df$area,fixed=T)
+area <- as.numeric(df$area)
 
-train <- attribs[1:15120,]
-test <- attribs[15121:nbrow,]
-classtrain <- class[1:15120]
-classtest <- class[15121:nbrow]
+# create the train data with one soil and one cover
+cover <- train.raw$Cover_Type
 
-train1 <- dataset[1:15120,]
-train1$Cover_Type <- as.factor(classtrain)
+remove.attributes <- c('Id',soils, areas, 'Cover_Type')
+# train.data <- subset(train.raw, select = -remove.attributes)
+train.data <- train.raw[, !(names(train.raw) %in% remove.attributes)]
+train.data$Soil_Type <- soil
+train.data$Wilderness_Area <- area
+train.data$Cover_Type <- as.factor(cover)
 
 # Define the range of values over which we would want to cross-validate our model
 Grid <-  expand.grid(
@@ -30,16 +48,43 @@ fitControl <- trainControl(method = "none", classProbs = TRUE)
 set.seed(1805)  
 
 GBMmodel <- train(Cover_Type ~ .,
-                  data = train1,
+                  data = train.data,
                   method = "gbm",
                   trControl = fitControl,
                   verbose = TRUE,
                   tuneGrid = Grid,
                   metric = "ROC")
 
-GBMpredTrain <- predict(GBMmodel, newdata = test, type="prob")
+test.data.url <- getURL("https://raw.githubusercontent.com/dakshasrani/Horcruxes/master/data/test.csv")
+test <- read.csv(text = test.data.url)
 
-error <- mean(GBMpredTrain != classtest)
+df = data.frame(test[soils])
+df$soil = 0
+for(colname in soils)({
+  coldata=df[,colname]
+  df$soil[which(coldata==1)]=colname
+})
+df$soil=gsub("Soil_Type","",df$soil,fixed=T)
+soil <- as.numeric(df$soil)
 
-# gbm.pred <- as.factor(colnames(GBMpredTrain)[max.col(GBMpredTrain)])
-# int depth -20 -> 24.13
+df = data.frame(test[areas])
+df$area = 0
+for(colname in areas)({
+  coldata=df[,colname]
+  df$area[which(coldata==1)]=colname
+})
+df$area=gsub("Wilderness_Area","",df$area,fixed=T)
+area <- as.numeric(df$area)
+
+remove.attributes <- c('Id',soils, areas)
+
+test1 <- test[, !(names(test) %in% remove.attributes)]
+test1$Soil_Type <- soil
+test1$Wilderness_Area <- area
+
+GBMpredTrain <- predict(GBMmodel, newdata = test1)
+
+results <- data.frame(Id=test$Id,Cover_Type=GBMpredTrain)
+
+write.csv(results, "gbm.csv", row.names=FALSE)
+
